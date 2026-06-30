@@ -1,0 +1,164 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Entity Validations
+    function isValidUser(data) {
+      return data.keys().hasAll(['id', 'name', 'email', 'role', 'passwordHash', 'createdAt'])
+        && data.id is string
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 256
+        && data.email is string && data.email.size() > 0 && data.email.size() <= 256
+        && data.role is string
+        && data.passwordHash is string
+        && data.createdAt is string;
+    }
+
+    function isValidCandidate(data) {
+      return data.keys().hasAll(['id', 'name', 'mobile', 'email', 'recruiterId', 'status', 'createdAt'])
+        && data.id is string
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 256
+        && data.mobile is string
+        && data.email is string
+        && data.recruiterId is string
+        && data.status is string
+        && data.createdAt is string;
+    }
+
+    function isValidInterview(data) {
+      return data.keys().hasAll(['id', 'candidateId', 'position', 'date', 'mode', 'round', 'interviewer', 'status', 'scheduledBy', 'createdAt'])
+        && data.id is string
+        && data.candidateId is string
+        && data.position is string
+        && data.date is string
+        && data.mode is string
+        && data.round is int
+        && data.interviewer is string
+        && data.status is string
+        && data.scheduledBy is string
+        && data.createdAt is string;
+    }
+
+    function isValidSelection(data) {
+      return data.keys().hasAll(['id', 'candidateId', 'status', 'date', 'updatedBy', 'createdAt'])
+        && data.id is string
+        && data.candidateId is string
+        && data.status is string
+        && data.date is string
+        && data.updatedBy is string
+        && data.createdAt is string;
+    }
+
+    function isValidJoining(data) {
+      return data.keys().hasAll(['id', 'candidateId', 'offerReleased', 'joiningDate', 'status', 'updatedBy', 'createdAt'])
+        && data.id is string
+        && data.candidateId is string
+        && data.offerReleased is bool
+        && data.joiningDate is string
+        && data.status is string
+        && data.updatedBy is string
+        && data.createdAt is string;
+    }
+
+    function isValidMessage(data) {
+      return data.keys().hasAll(['id', 'userId', 'userName', 'userRole', 'message', 'timestamp'])
+        && data.id is string
+        && data.userId is string
+        && data.userName is string
+        && data.userRole is string
+        && data.message is string && data.message.size() > 0 && data.message.size() <= 2000
+        && data.timestamp is string;
+    }
+
+    function isValidSettings(data) {
+      return data.keys().hasAll(['showLoginDemoInfo'])
+        && data.showLoginDemoInfo is bool;
+    }
+
+    function isValidLog(data) {
+      return data.keys().hasAll(['id', 'userId', 'userName', 'userEmail', 'userRole', 'action', 'details', 'timestamp'])
+        && data.id is string
+        && data.userId is string
+        && data.userName is string
+        && data.userEmail is string
+        && data.userRole is string
+        && data.action is string
+        && data.details is string
+        && data.timestamp is string;
+    }
+
+    function isValidCandidateDraft(data) {
+      return data.keys().hasAll(['id', 'recruiterId', 'updatedAt'])
+        && data.id is string && data.id.size() > 0 && data.id.size() <= 128
+        && data.recruiterId is string && data.recruiterId.size() > 0 && data.recruiterId.size() <= 128
+        && data.updatedAt is string && data.updatedAt.size() > 0 && data.updatedAt.size() <= 128;
+    }
+
+    // Rules
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isValidId(userId) && isValidUser(incoming());
+    }
+
+    match /candidates/{candidateId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isValidId(candidateId) && isValidCandidate(incoming());
+    }
+
+    match /candidateDrafts/{draftId} {
+      allow read: if true;
+      allow write: if isValidId(draftId) && isValidCandidateDraft(incoming());
+      allow delete: if isValidId(draftId);
+    }
+
+    match /interviews/{interviewId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isValidId(interviewId) && isValidInterview(incoming());
+    }
+
+    match /selections/{selectionId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isValidId(selectionId) && isValidSelection(incoming());
+    }
+
+    match /joinings/{joiningId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isValidId(joiningId) && isValidJoining(incoming());
+    }
+
+    match /messages/{messageId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isValidId(messageId) && isValidMessage(incoming());
+    }
+
+    match /settings/{settingsId} {
+      allow read: if true;
+      allow write: if isSignedIn() && isValidId(settingsId) && isValidSettings(incoming());
+    }
+
+    match /logs/{logId} {
+      allow read: if true;
+      allow write: if false; // Logs are server-authored only for auditing security
+    }
+  }
+}

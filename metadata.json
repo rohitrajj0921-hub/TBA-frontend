@@ -1,0 +1,8 @@
+{
+  "name": "Remix: Remix: Recruitment ATS",
+  "description": "A comprehensive Applicant Tracking System (ATS) with role-based access control, real-time candidate pipelines, interview scheduling, analytics, and performance reporting.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

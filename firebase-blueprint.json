@@ -1,0 +1,241 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "System user or recruiter",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "role": { "type": "string" },
+        "passwordHash": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "teamLeadId": { "type": "string" },
+        "permissions": { "type": "array" },
+        "restrictedUserIds": { "type": "array" }
+      },
+      "required": ["id", "name", "email", "role", "passwordHash", "createdAt"]
+    },
+    "Candidate": {
+      "title": "Candidate",
+      "description": "Candidate application details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "mobile": { "type": "string" },
+        "email": { "type": "string" },
+        "location": { "type": "string" },
+        "currentCompany": { "type": "string" },
+        "currentSalary": { "type": "number" },
+        "expectedSalary": { "type": "number" },
+        "experience": { "type": "number" },
+        "noticePeriod": { "type": "number" },
+        "skills": { "type": "array" },
+        "recruiterId": { "type": "string" },
+        "recruiterName": { "type": "string" },
+        "source": { "type": "string" },
+        "callDate": { "type": "string" },
+        "remarks": { "type": "string" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "name", "mobile", "email", "recruiterId", "status", "createdAt"]
+    },
+    "Interview": {
+      "title": "Interview",
+      "description": "Scheduled interview session",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "candidateId": { "type": "string" },
+        "candidateName": { "type": "string" },
+        "position": { "type": "string" },
+        "date": { "type": "string" },
+        "time": { "type": "string" },
+        "mode": { "type": "string" },
+        "round": { "type": "number" },
+        "interviewer": { "type": "string" },
+        "status": { "type": "string" },
+        "feedback": { "type": "string" },
+        "scheduledBy": { "type": "string" },
+        "scheduledByName": { "type": "string" },
+        "meetingLink": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "candidateId", "position", "date", "mode", "round", "interviewer", "status", "scheduledBy", "createdAt"]
+    },
+    "Selection": {
+      "title": "Selection",
+      "description": "Candidate selection decision and offer metadata",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "candidateId": { "type": "string" },
+        "candidateName": { "type": "string" },
+        "status": { "type": "string" },
+        "date": { "type": "string" },
+        "remarks": { "type": "string" },
+        "updatedBy": { "type": "string" },
+        "updatedByName": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "candidateId", "status", "date", "updatedBy", "createdAt"]
+    },
+    "Joining": {
+      "title": "Joining",
+      "description": "Candidate joining / placement and onboard details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "candidateId": { "type": "string" },
+        "candidateName": { "type": "string" },
+        "offerReleased": { "type": "boolean" },
+        "joiningDate": { "type": "string" },
+        "status": { "type": "string" },
+        "remarks": { "type": "string" },
+        "updatedBy": { "type": "string" },
+        "updatedByName": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "candidateId", "offerReleased", "joiningDate", "status", "updatedBy", "createdAt"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Recruitment channel direct or group chat message",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userRole": { "type": "string" },
+        "message": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "receiverId": { "type": "string" }
+      },
+      "required": ["id", "userId", "userName", "userRole", "message", "timestamp"]
+    },
+    "SystemSettings": {
+      "title": "SystemSettings",
+      "description": "App personalization settings",
+      "type": "object",
+      "properties": {
+        "showLoginDemoInfo": { "type": "boolean" }
+      },
+      "required": ["showLoginDemoInfo"]
+    },
+    "ActivityLog": {
+      "title": "ActivityLog",
+      "description": "System audit trail logs tracking actions of every user",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "userName": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "userRole": { "type": "string" },
+        "action": { "type": "string" },
+        "details": { "type": "string" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["id", "userId", "userName", "userEmail", "userRole", "action", "details", "timestamp"]
+    },
+    "PastMeeting": {
+      "title": "PastMeeting",
+      "description": "Completed session logs of team meetings with duration and participants",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "meetingId": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "durationMinutes": { "type": "number" },
+        "participants": { "type": "array" },
+        "completedAt": { "type": "string" }
+      },
+      "required": ["id", "title", "durationMinutes", "participants", "completedAt"]
+    },
+    "CandidateDraft": {
+      "title": "CandidateDraft",
+      "description": "Autosaved candidate draft profile to prevent data loss",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "candidateId": { "type": "string" },
+        "recruiterId": { "type": "string" },
+        "name": { "type": "string" },
+        "mobile": { "type": "string" },
+        "email": { "type": "string" },
+        "location": { "type": "string" },
+        "currentCompany": { "type": "string" },
+        "currentSalary": { "type": "number" },
+        "expectedSalary": { "type": "number" },
+        "experience": { "type": "number" },
+        "noticePeriod": { "type": "number" },
+        "skills": { "type": "array" },
+        "tags": { "type": "array" },
+        "source": { "type": "string" },
+        "callDate": { "type": "string" },
+        "remarks": { "type": "string" },
+        "status": { "type": "string" },
+        "timeHour": { "type": "string" },
+        "role": { "type": "string" },
+        "interviewDate": { "type": "string" },
+        "doneInterview": { "type": "string" },
+        "notDoneInterview": { "type": "string" },
+        "rescheduleInterview": { "type": "string" },
+        "feedback": { "type": "string" },
+        "selectionDate": { "type": "string" },
+        "offerReceivedSalary": { "type": "number" },
+        "offerRemark": { "type": "string" },
+        "joiningDate": { "type": "string" },
+        "joiningStatusText": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "recruiterId", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "All registered recruitment users and administrator accounts"
+    },
+    "/candidates/{candidateId}": {
+      "schema": "Candidate",
+      "description": "Sourced profiles, tracking contact state and initial call remarks"
+    },
+    "/interviews/{interviewId}": {
+      "schema": "Interview",
+      "description": "Evaluation loops and round statuses"
+    },
+    "/selections/{selectionId}": {
+      "schema": "Selection",
+      "description": "Offer stages, panel verdicts, and rejection remarks"
+    },
+    "/joinings/{joiningId}": {
+      "schema": "Joining",
+      "description": "Candidate placements, onboarding confirmations, and checklist logs"
+    },
+    "/messages/{messageId}": {
+      "schema": "ChatMessage",
+      "description": "Internal collaboration messages"
+    },
+    "/settings/{settingsId}": {
+      "schema": "SystemSettings",
+      "description": "Dynamic configuration of the app login flow"
+    },
+    "/logs/{logId}": {
+      "schema": "ActivityLog",
+      "description": "Audit trail logs, accessible to Admin only"
+    },
+    "/past_meetings/{pastMeetingId}": {
+      "schema": "PastMeeting",
+      "description": "Archived logs of completed sessions, available for auditing"
+    },
+    "/candidateDrafts/{draftId}": {
+      "schema": "CandidateDraft",
+      "description": "Autosaved recruiter candidate edit forms"
+    }
+  }
+}

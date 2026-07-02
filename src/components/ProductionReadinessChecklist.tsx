@@ -28,6 +28,7 @@ interface ProductionReadinessChecklistProps {
 
 interface DiagnosticData {
   isUsingFirestore: boolean;
+  isUsingSupabase?: boolean;
   hasConfig: boolean;
   isGeminiApiKeySet: boolean;
   isNodeEnvProduction: boolean;
@@ -143,7 +144,7 @@ export default function ProductionReadinessChecklist({ token }: ProductionReadin
     let passed = 0;
     const total = 5;
 
-    if (diagnostics.isUsingFirestore) passed++;
+    if (diagnostics.isUsingFirestore || diagnostics.isUsingSupabase) passed++;
     if (diagnostics.isGeminiApiKeySet) passed++;
     if (!diagnostics.hasDemoData) passed++;
     if (diagnostics.adminCount > 0) passed++;
@@ -237,26 +238,30 @@ export default function ProductionReadinessChecklist({ token }: ProductionReadin
 
           <div className="space-y-3">
             
-            {/* CHECK 1: FIRESTORE DATABASE STATUS */}
+            {/* CHECK 1: DATABASE STATUS */}
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-start space-x-3">
-                  <div className={`p-2 rounded-lg shrink-0 ${diagnostics?.isUsingFirestore ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600' : 'bg-amber-50 dark:bg-amber-950/30 text-amber-600'}`}>
+                  <div className={`p-2 rounded-lg shrink-0 ${(diagnostics?.isUsingSupabase || diagnostics?.isUsingFirestore) ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600' : 'bg-amber-50 dark:bg-amber-950/30 text-amber-600'}`}>
                     <Server className="w-4 h-4" />
                   </div>
                   <div>
-                    <h4 className="text-xs font-black text-slate-900 dark:text-white">Cloud Firestore DB Integration</h4>
+                    <h4 className="text-xs font-black text-slate-900 dark:text-white">
+                      {diagnostics?.isUsingSupabase ? 'Supabase Database Integration' : 'Cloud Firestore DB Integration'}
+                    </h4>
                     <p className="text-[11px] text-slate-450 dark:text-slate-400 mt-1">
-                      {diagnostics?.isUsingFirestore 
+                      {diagnostics?.isUsingSupabase 
+                        ? `Live Connection: Supabase (Postgres) is successfully configured and active as your primary SQL database.`
+                        : diagnostics?.isUsingFirestore
                         ? `Live Connection: Cloud Firestore is provisioned and active as the primary data persistence layer.` 
                         : "Fallback Active: The server is operating on local JSON memory (db.json). Clear mock data will only apply locally."}
                     </p>
                   </div>
                 </div>
                 <div>
-                  {diagnostics?.isUsingFirestore ? (
+                  {(diagnostics?.isUsingSupabase || diagnostics?.isUsingFirestore) ? (
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-150">
-                      CONNECTED (LIVE)
+                      {diagnostics?.isUsingSupabase ? 'SUPABASE LIVE' : 'FIRESTORE LIVE'}
                     </span>
                   ) : (
                     <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-150">
@@ -266,9 +271,9 @@ export default function ProductionReadinessChecklist({ token }: ProductionReadin
                 </div>
               </div>
 
-              {!diagnostics?.isUsingFirestore && (
+              {!(diagnostics?.isUsingSupabase || diagnostics?.isUsingFirestore) && (
                 <div className="text-[11px] bg-amber-50 dark:bg-amber-950/20 text-amber-800 dark:text-amber-400 p-2.5 rounded-lg border border-amber-100 dark:border-amber-900/40">
-                  <strong className="font-extrabold">Notice:</strong> To go live tomorrow, provision an enterprise-grade Firebase database. Run the <code className="font-mono bg-amber-100 dark:bg-amber-900 px-1 rounded text-amber-900 dark:text-amber-200">set_up_firebase</code> tool configuration inside the dashboard settings.
+                  <strong className="font-extrabold">Notice:</strong> To go live, configure Supabase by setting <code className="font-mono bg-amber-100 dark:bg-amber-900 px-1 rounded text-amber-900 dark:text-amber-200">SUPABASE_URL</code> and <code className="font-mono bg-amber-100 dark:bg-amber-900 px-1 rounded text-amber-900 dark:text-amber-200">SUPABASE_KEY</code> variables in your Secrets panel.
                 </div>
               )}
             </div>

@@ -5,6 +5,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { createClient } from '@supabase/supabase-js';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 import { 
@@ -94,11 +95,135 @@ const INITIAL_DB: Schema = {
 
 export class ATSDatabase {
   private static db: any = null;
+  private static supabaseClient: any = null;
   private static cache: Schema = INITIAL_DB;
   private static isInitialized = false;
 
+  private static async writeToSupabase(tableName: string, docId: string, record: any) {
+    if (!this.supabaseClient) return;
+    try {
+      const cleaned = { ...record };
+      const { error } = await this.supabaseClient.from(tableName).upsert(cleaned);
+      if (error) {
+        console.error(`Supabase error writing to '${tableName}':`, error.message);
+      }
+    } catch (err: any) {
+      console.error(`Supabase exception writing to '${tableName}':`, err.message);
+    }
+  }
+
+  private static async deleteFromSupabase(tableName: string, docId: string) {
+    if (!this.supabaseClient) return;
+    try {
+      const { error } = await this.supabaseClient.from(tableName).delete().eq('id', docId);
+      if (error) {
+        console.error(`Supabase error deleting from '${tableName}':`, error.message);
+      }
+    } catch (err: any) {
+      console.error(`Supabase exception deleting from '${tableName}':`, err.message);
+    }
+  }
+
+  private static async syncFromSupabase() {
+    if (!this.supabaseClient) return;
+
+    let tableMissingLogged = false;
+    const fetchTable = async (tableName: string, fallback: any[]) => {
+      try {
+        const { data, error } = await this.supabaseClient.from(tableName).select('*');
+        if (error) {
+          if (!tableMissingLogged) {
+            console.warn("\n[SUPABASE CONFIGURATION SUGGESTION]");
+            console.warn(`If you haven't created the tables in your Supabase project yet, please run this SQL in your Supabase SQL Editor:`);
+            console.warn(`
+-- SQL Script to set up Supabase Tables:
+create table if not exists users (id text primary key, name text, email text, role text, "passwordHash" text, "createdAt" text, "teamLeadId" text, permissions jsonb, "restrictedUserIds" jsonb, "meetingsDisabled" boolean);
+create table if not exists candidates (id text primary key, name text, email text, mobile text, location text, experience text, role text, "currentCompany" text, "resumeUrl" text, "recruiterId" text, "recruiterName" text, status text, "createdAt" text, "joiningDate" text);
+create table if not exists interviews (id text primary key, "candidateId" text, "candidateName" text, "recruiterId" text, "recruiterName" text, "interviewerName" text, "scheduledTime" text, mode text, "meetingLink" text, status text, feedback text, rating integer, "createdAt" text);
+create table if not exists selections (id text primary key, "candidateId" text, "candidateName" text, "recruiterId" text, "recruiterName" text, "offeredLpa" numeric, "offeredRole" text, "offerLetterUrl" text, status text, "createdAt" text);
+create table if not exists joinings (id text primary key, "candidateId" text, "candidateName" text, "recruiterId" text, "recruiterName" text, "joiningDate" text, status text, "createdAt" text);
+create table if not exists messages (id text primary key, "userId" text, "userName" text, "userRole" text, content text, timestamp text, "receiverId" text);
+create table if not exists logs (id text primary key, "userId" text, "userName" text, "userEmail" text, "userRole" text, action text, details text, timestamp text);
+create table if not exists settings (id text primary key, "showLoginDemoInfo" boolean);
+create table if not exists meetings (id text primary key, topic text, date text, "startTime" text, "endTime" text, "hostId" text, "hostName" text, "meetingUrl" text, "invitees" jsonb, "createdAt" text);
+create table if not exists past_meetings (id text primary key, topic text, date text, "startTime" text, "endTime" text, "hostId" text, "hostName" text, "meetingUrl" text, "invitees" jsonb, "createdAt" text, "recordingUrl" text, transcript text, summary text);
+create table if not exists tasks (id text primary key, title text, description text, "assignedToId" text, "assignedToName" text, "candidateId" text, "candidateName" text, "dueDate" text, status text, priority text, "creatorId" text, "creatorName" text, "createdAt" text);
+create table if not exists task_comments (id text primary key, "taskId" text, "userId" text, "userName" text, content text, "createdAt" text);
+            `);
+            tableMissingLogged = true;
+          }
+          console.warn(`Could not sync table '${tableName}' from Supabase yet (Message: ${error.message}). Falling back to local offline DB cache.`);
+          return fallback;
+        }
+        return data || fallback;
+      } catch (err: any) {
+        console.warn(`Exception syncing '${tableName}' from Supabase: ${err.message}`);
+        return fallback;
+      }
+    };
+
+    const usersList = await fetchTable('users', INITIAL_DB.users);
+    const candidatesList = await fetchTable('candidates', INITIAL_DB.candidates);
+    const interviewsList = await fetchTable('interviews', INITIAL_DB.interviews);
+    const selectionsList = await fetchTable('selections', INITIAL_DB.selections);
+    const joiningsList = await fetchTable('joinings', INITIAL_DB.joinings);
+    const messagesList = await fetchTable('messages', INITIAL_DB.messages);
+    const logsList = await fetchTable('logs', INITIAL_DB.logs);
+    
+    const settingsList = await fetchTable('settings', []);
+    const settingsObj = settingsList.length > 0 ? settingsList[0] : (INITIAL_DB.settings || { showLoginDemoInfo: true });
+
+    const meetingsList = await fetchTable('meetings', []);
+    const pastMeetingsList = await fetchTable('past_meetings', []);
+    const tasksList = await fetchTable('tasks', []);
+    const taskCommentsList = await fetchTable('task_comments', []);
+
+    this.cache = {
+      users: usersList,
+      candidates: candidatesList,
+      interviews: interviewsList,
+      selections: selectionsList,
+      joinings: joiningsList,
+      messages: messagesList,
+      settings: settingsObj,
+      logs: logsList,
+      meetings: meetingsList,
+      pastMeetings: pastMeetingsList,
+      tasks: tasksList,
+      taskComments: taskCommentsList
+    };
+
+    this.saveToFile(this.cache);
+  }
+
   static async initialize() {
     try {
+      const supabaseUrl = process.env.SUPABASE_URL;
+      const supabaseKey = process.env.SUPABASE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+
+      if (supabaseUrl && supabaseKey) {
+        console.log("================ SUPABASE DETECTED ================");
+        console.log(`Connecting to Supabase at: ${supabaseUrl}`);
+        this.supabaseClient = createClient(supabaseUrl, supabaseKey);
+        await this.syncFromSupabase();
+        this.ensureDefaultUsers();
+        
+        const hasDemoData = this.cache.candidates?.some(c => 
+          ['cand_1', 'cand_vikram', 'cand_sneha', 'cand_amit', 'cand_meera'].includes(c.id) || 
+          c.name.includes("Rohan")
+        ) || this.cache.users?.some(u => 
+          ['usr_aditi', 'usr_kunal', 'usr_riya'].includes(u.id)
+        );
+
+        if (hasDemoData) {
+          await this.wipeDummyData();
+        }
+        this.isInitialized = true;
+        console.log("Supabase initialization complete.");
+        console.log("==================================================");
+        return;
+      }
+
       const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
       if (!fs.existsSync(configPath)) {
         console.log("Firebase config file not found. Falling back to local file-based JSON database.");
@@ -664,6 +789,9 @@ export class ATSDatabase {
     };
     this.saveToFile(this.cache);
 
+    if (this.supabaseClient) {
+      this.writeToSupabase('settings', 'system', this.cache.settings);
+    }
     if (this.db) {
       this.db.collection('settings').doc('system').set(this.cache.settings)
         .catch((err: any) => console.error("Firestore write error (updateSettings):", err));
@@ -703,6 +831,9 @@ export class ATSDatabase {
     this.cache.users.push(newUser);
     this.saveToFile(this.cache);
 
+    if (this.supabaseClient) {
+      this.writeToSupabase('users', newUser.id, newUser);
+    }
     if (this.db) {
       this.db.collection('users').doc(newUser.id).set(newUser)
         .catch((err: any) => console.error("Firestore write error (createUser):", err));
@@ -746,6 +877,9 @@ export class ATSDatabase {
     this.cache.users[index] = updatedUser;
     this.saveToFile(this.cache);
 
+    if (this.supabaseClient) {
+      this.writeToSupabase('users', id, updatedUser);
+    }
     if (this.db) {
       this.db.collection('users').doc(id).set(updatedUser)
         .catch((err: any) => console.error("Firestore write error (updateUser):", err));
@@ -775,6 +909,9 @@ export class ATSDatabase {
     this.cache.users.forEach(u => {
       if (u.teamLeadId === id) {
         delete u.teamLeadId;
+        if (this.supabaseClient) {
+          this.writeToSupabase('users', u.id, u);
+        }
         if (this.db) {
           batchUpdates.push(this.db.collection('users').doc(u.id).update({ teamLeadId: FieldValue.delete() }));
         }
@@ -783,6 +920,9 @@ export class ATSDatabase {
 
     this.saveToFile(this.cache);
 
+    if (this.supabaseClient) {
+      this.deleteFromSupabase('users', id);
+    }
     if (this.db) {
       this.db.collection('users').doc(id).delete()
         .catch((err: any) => console.error("Firestore write error (deleteUser):", err));
@@ -839,6 +979,9 @@ export class ATSDatabase {
     this.cache.candidates.push(newCandidate);
     this.saveToFile(this.cache);
 
+    if (this.supabaseClient) {
+      this.writeToSupabase('candidates', newCandidate.id, newCandidate);
+    }
     if (this.db) {
       this.db.collection('candidates').doc(newCandidate.id).set(newCandidate)
         .catch((err: any) => console.error("Firestore write error (createCandidate):", err));
@@ -869,6 +1012,9 @@ export class ATSDatabase {
     this.cache.candidates[idx] = updatedCandidate;
     this.saveToFile(this.cache);
 
+    if (this.supabaseClient) {
+      this.writeToSupabase('candidates', id, updatedCandidate);
+    }
     if (this.db) {
       this.db.collection('candidates').doc(id).set(updatedCandidate)
         .catch((err: any) => console.error("Firestore write error (updateCandidate):", err));
@@ -883,6 +1029,12 @@ export class ATSDatabase {
     this.cache.joinings = this.cache.joinings.filter(j => j.candidateId !== id);
     this.saveToFile(this.cache);
 
+    if (this.supabaseClient) {
+      this.deleteFromSupabase('candidates', id);
+      this.supabaseClient.from('interviews').delete().eq('candidateId', id).catch((err: any) => console.error(err));
+      this.supabaseClient.from('selections').delete().eq('candidateId', id).catch((err: any) => console.error(err));
+      this.supabaseClient.from('joinings').delete().eq('candidateId', id).catch((err: any) => console.error(err));
+    }
     if (this.db) {
       const batch = this.db.batch();
       batch.delete(this.db.collection('candidates').doc(id));
@@ -931,6 +1083,9 @@ export class ATSDatabase {
     this.cache.interviews.push(newInterview);
     this.saveToFile(this.cache);
 
+    if (this.supabaseClient) {
+      this.writeToSupabase('interviews', newInterview.id, newInterview);
+    }
     if (this.db) {
       this.db.collection('interviews').doc(newInterview.id).set(newInterview)
         .catch((err: any) => console.error("Firestore write error (createInterview):", err));
@@ -964,6 +1119,9 @@ export class ATSDatabase {
     this.cache.interviews[idx] = updatedInterview;
     this.saveToFile(this.cache);
 
+    if (this.supabaseClient) {
+      this.writeToSupabase('interviews', id, updatedInterview);
+    }
     if (this.db) {
       this.db.collection('interviews').doc(id).set(updatedInterview)
         .catch((err: any) => console.error("Firestore write error (updateInterview):", err));
@@ -975,6 +1133,9 @@ export class ATSDatabase {
     this.cache.interviews = this.cache.interviews.filter(i => i.id !== id);
     this.saveToFile(this.cache);
 
+    if (this.supabaseClient) {
+      this.deleteFromSupabase('interviews', id);
+    }
     if (this.db) {
       this.db.collection('interviews').doc(id).delete()
         .catch((err: any) => console.error("Firestore write error (deleteInterview):", err));
@@ -1005,6 +1166,11 @@ export class ATSDatabase {
     this.cache.selections.push(newSelection);
     this.saveToFile(this.cache);
 
+    if (this.supabaseClient) {
+      this.supabaseClient.from('selections').delete().eq('candidateId', selection.candidateId)
+        .then(() => this.writeToSupabase('selections', newSelection.id, newSelection))
+        .catch((err: any) => console.error(err));
+    }
     if (this.db) {
       this.db.collection('selections').where('candidateId', '==', selection.candidateId).get()
         .then((snap: any) => {
@@ -1044,6 +1210,9 @@ export class ATSDatabase {
     this.cache.selections[idx] = updatedSelection;
     this.saveToFile(this.cache);
 
+    if (this.supabaseClient) {
+      this.writeToSupabase('selections', id, updatedSelection);
+    }
     if (this.db) {
       this.db.collection('selections').doc(id).set(updatedSelection)
         .catch((err: any) => console.error("Firestore write error (updateSelection):", err));
@@ -1075,6 +1244,11 @@ export class ATSDatabase {
     this.cache.joinings.push(newJoining);
     this.saveToFile(this.cache);
 
+    if (this.supabaseClient) {
+      this.supabaseClient.from('joinings').delete().eq('candidateId', joining.candidateId)
+        .then(() => this.writeToSupabase('joinings', newJoining.id, newJoining))
+        .catch((err: any) => console.error(err));
+    }
     if (this.db) {
       this.db.collection('joinings').where('candidateId', '==', joining.candidateId).get()
         .then((snap: any) => {
@@ -1114,6 +1288,9 @@ export class ATSDatabase {
     this.cache.joinings[idx] = updatedJoining;
     this.saveToFile(this.cache);
 
+    if (this.supabaseClient) {
+      this.writeToSupabase('joinings', id, updatedJoining);
+    }
     if (this.db) {
       this.db.collection('joinings').doc(id).set(updatedJoining)
         .catch((err: any) => console.error("Firestore write error (updateJoining):", err));
@@ -1140,6 +1317,9 @@ export class ATSDatabase {
     this.cache.messages.push(newMessage);
     this.saveToFile(this.cache);
 
+    if (this.supabaseClient) {
+      this.writeToSupabase('messages', newMessage.id, newMessage);
+    }
     if (this.db) {
       this.db.collection('messages').doc(newMessage.id).set(newMessage)
         .catch((err: any) => console.error("Firestore write error (createMessage):", err));
@@ -1153,6 +1333,9 @@ export class ATSDatabase {
     if (this.cache.messages.length !== initialLen) {
       this.saveToFile(this.cache);
 
+      if (this.supabaseClient) {
+        this.deleteFromSupabase('messages', id);
+      }
       if (this.db) {
         this.db.collection('messages').doc(id).delete()
           .catch((err: any) => console.error("Firestore write error (deleteMessage):", err));
@@ -1166,6 +1349,10 @@ export class ATSDatabase {
     this.cache.messages = [];
     this.saveToFile(this.cache);
 
+    if (this.supabaseClient) {
+      this.supabaseClient.from('messages').delete().neq('id', 'placeholder')
+        .catch((err: any) => console.error("Supabase write error (clearAllMessages):", err));
+    }
     if (this.db) {
       this.db.collection('messages').get()
         .then((snap: any) => {
@@ -1205,6 +1392,9 @@ export class ATSDatabase {
     this.cache.logs.push(newLog);
     this.saveToFile(this.cache);
 
+    if (this.supabaseClient) {
+      this.writeToSupabase('logs', newLog.id, newLog);
+    }
     if (this.db) {
       this.db.collection('logs').doc(newLog.id).set(newLog)
         .catch((err: any) => console.error("Firestore write error (createLog):", err));
@@ -1241,6 +1431,9 @@ export class ATSDatabase {
     this.cache.meetings.push(newMeeting);
     this.saveToFile(this.cache);
 
+    if (this.supabaseClient) {
+      this.writeToSupabase('meetings', newMeeting.id, newMeeting);
+    }
     if (this.db) {
       this.db.collection('meetings').doc(newMeeting.id).set(newMeeting)
         .catch((err: any) => console.error("Firestore write error (createMeeting):", err));
@@ -1257,6 +1450,9 @@ export class ATSDatabase {
     if (this.cache.meetings.length !== initialLen) {
       this.saveToFile(this.cache);
 
+      if (this.supabaseClient) {
+        this.deleteFromSupabase('meetings', id);
+      }
       if (this.db) {
         this.db.collection('meetings').doc(id).delete()
           .catch((err: any) => console.error("Firestore write error (deleteMeeting):", err));
@@ -1292,6 +1488,9 @@ export class ATSDatabase {
     this.cache.pastMeetings.push(newPastMeeting);
     this.saveToFile(this.cache);
 
+    if (this.supabaseClient) {
+      this.writeToSupabase('past_meetings', newPastMeeting.id, newPastMeeting);
+    }
     if (this.db) {
       this.db.collection('past_meetings').doc(newPastMeeting.id).set(newPastMeeting)
         .catch((err: any) => console.error("Firestore write error (createPastMeeting):", err));
@@ -1321,6 +1520,9 @@ export class ATSDatabase {
     this.cache.tasks.push(newTask);
     this.saveToFile(this.cache);
 
+    if (this.supabaseClient) {
+      this.writeToSupabase('tasks', newTask.id, newTask);
+    }
     if (this.db) {
       this.db.collection('tasks').doc(newTask.id).set(newTask)
         .catch((err: any) => console.error("Firestore write error (createTask):", err));
@@ -1343,6 +1545,9 @@ export class ATSDatabase {
     this.cache.tasks[idx] = updatedTask;
     this.saveToFile(this.cache);
 
+    if (this.supabaseClient) {
+      this.writeToSupabase('tasks', id, updatedTask);
+    }
     if (this.db) {
       this.db.collection('tasks').doc(id).set(updatedTask)
         .catch((err: any) => console.error("Firestore write error (updateTask):", err));
@@ -1359,6 +1564,9 @@ export class ATSDatabase {
     if (this.cache.tasks.length !== initialLen) {
       this.saveToFile(this.cache);
 
+      if (this.supabaseClient) {
+        this.deleteFromSupabase('tasks', id);
+      }
       if (this.db) {
         this.db.collection('tasks').doc(id).delete()
           .catch((err: any) => console.error("Firestore write error (deleteTask):", err));
@@ -1393,6 +1601,9 @@ export class ATSDatabase {
     this.cache.taskComments.push(newComment);
     this.saveToFile(this.cache);
 
+    if (this.supabaseClient) {
+      this.writeToSupabase('task_comments', newComment.id, newComment);
+    }
     if (this.db) {
       this.db.collection('task_comments').doc(newComment.id).set(newComment)
         .catch((err: any) => console.error("Firestore write error (createTaskComment):", err));
@@ -1926,6 +2137,7 @@ export class ATSDatabase {
 
   static getProductionDiagnostics() {
     const isUsingFirestore = this.db !== null;
+    const isUsingSupabase = this.supabaseClient !== null;
     const hasConfig = fs.existsSync(path.join(process.cwd(), 'firebase-applet-config.json'));
     const isGeminiApiKeySet = !!process.env.GEMINI_API_KEY;
     const isNodeEnvProduction = process.env.NODE_ENV === 'production';
@@ -1954,6 +2166,7 @@ export class ATSDatabase {
 
     return {
       isUsingFirestore,
+      isUsingSupabase,
       hasConfig,
       isGeminiApiKeySet,
       isNodeEnvProduction,

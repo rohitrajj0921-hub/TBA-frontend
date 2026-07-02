@@ -81,29 +81,38 @@ async function startServer() {
 
   // 1. Auth Login
   app.post("/api/auth/login", (req, res) => {
-    const { email, password } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ error: "Email and password are required" });
+    try {
+      const { email, password } = req.body;
+      if (!email || !password) {
+        return res.status(400).json({ error: "Email and password are required" });
+      }
+
+      const user = ATSDatabase.verifyUserCredentials(email, password);
+      if (!user) {
+        return res.status(400).json({ error: "Invalid email or password" });
+      }
+
+      ATSDatabase.createLog({
+        userId: user.id,
+        userName: user.name,
+        userEmail: user.email,
+        userRole: user.role,
+        action: "LOGIN",
+        details: `Logged into the system successfully.`
+      });
+
+      res.json({
+        user,
+        token: user.id // using the userId as a simple secure token for local app state
+      });
+    } catch (err: any) {
+      console.error("Login endpoint runtime error:", err);
+      res.status(500).json({
+        error: "A server error occurred during login. Please verify your database credentials and configuration.",
+        message: err.message,
+        stack: process.env.NODE_ENV !== "production" ? err.stack : undefined
+      });
     }
-
-    const user = ATSDatabase.verifyUserCredentials(email, password);
-    if (!user) {
-      return res.status(400).json({ error: "Invalid email or password" });
-    }
-
-    ATSDatabase.createLog({
-      userId: user.id,
-      userName: user.name,
-      userEmail: user.email,
-      userRole: user.role,
-      action: "LOGIN",
-      details: `Logged into the system successfully.`
-    });
-
-    res.json({
-      user,
-      token: user.id // using the userId as a simple secure token for local app state
-    });
   });
 
   // 2. Auth Me
@@ -1429,7 +1438,7 @@ async function startServer() {
   });
 
   // --- VITE DEV / PRODUCTION STATIC BUILD INTEGRATION ---
-  if (process.env.NODE_ENV !== "production") {
+  if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",

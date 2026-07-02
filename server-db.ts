@@ -198,7 +198,17 @@ create table if not exists task_comments (id text primary key, "taskId" text, "u
 
   static async initialize() {
     try {
-      const supabaseUrl = process.env.SUPABASE_URL;
+      let supabaseUrl = process.env.SUPABASE_URL;
+      if (supabaseUrl) {
+        supabaseUrl = supabaseUrl.trim();
+        if (supabaseUrl.endsWith("/")) {
+          supabaseUrl = supabaseUrl.slice(0, -1);
+        }
+        if (supabaseUrl.endsWith("/rest/v1")) {
+          supabaseUrl = supabaseUrl.replace("/rest/v1", "");
+        }
+      }
+
       const supabaseKey = process.env.SUPABASE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
 
       if (supabaseUrl && supabaseKey) {
@@ -329,9 +339,11 @@ create table if not exists task_comments (id text primary key, "taskId" text, "u
     this.cache.taskComments = [];
     
     // Filter users to keep only our real/default admins
-    this.cache.users = this.cache.users.filter(u => 
-      u.email.toLowerCase() === "rohitrajj2109@gmail.com" || 
-      u.email.toLowerCase() === "rohitrajj0921@gmail.com"
+    this.cache.users = (this.cache.users || []).filter(u => 
+      u && u.email && (
+        u.email.toLowerCase() === "rohitrajj2109@gmail.com" || 
+        u.email.toLowerCase() === "rohitrajj0921@gmail.com"
+      )
     );
 
     // Default system settings
@@ -419,7 +431,7 @@ create table if not exists task_comments (id text primary key, "taskId" text, "u
 
     let updated = false;
     for (const u of defaultUsers) {
-      const found = this.cache.users.find(existing => existing.email.toLowerCase() === u.email.toLowerCase());
+      const found = (this.cache.users || []).find(existing => existing && existing.email && existing.email.toLowerCase() === u.email.toLowerCase());
       if (!found) {
         console.log(`Ensuring default admin user ${u.email} exists in database...`);
         const defaultAdmin = {
@@ -641,6 +653,10 @@ create table if not exists task_comments (id text primary key, "taskId" text, "u
 
   private static setupRealtimeListeners() {
     if (!this.db) return;
+    if (process.env.VERCEL || process.env.NODE_ENV === "production") {
+      console.log("Running in serverless/production environment. Disabling real-time Firestore listeners to prevent container timeouts and exhaustion.");
+      return;
+    }
 
     this.db.collection('users').onSnapshot((snap: any) => {
       const list: any[] = [];
@@ -805,12 +821,14 @@ create table if not exists task_comments (id text primary key, "taskId" text, "u
   }
 
   static getUserByEmail(email: string) {
-    const user = this.cache.users.find(u => u.email.toLowerCase() === email.toLowerCase());
+    if (!email) return null;
+    const user = (this.cache.users || []).find(u => u && u.email && u.email.toLowerCase() === email.toLowerCase());
     return user || null;
   }
 
   static createUser(user: Omit<User, 'id' | 'createdAt'> & { passwordPlain: string }) {
-    const existing = this.cache.users.find(u => u.email.toLowerCase() === user.email.toLowerCase());
+    const userEmail = (user.email || "").toLowerCase();
+    const existing = (this.cache.users || []).find(u => u && u.email && u.email.toLowerCase() === userEmail);
     if (existing) {
       throw new Error(`User with email ${user.email} already exists`);
     }
@@ -933,7 +951,8 @@ create table if not exists task_comments (id text primary key, "taskId" text, "u
   }
 
   static verifyUserCredentials(email: string, passwordPlain: string): User | null {
-    const user = this.cache.users.find(u => u.email.toLowerCase() === email.toLowerCase());
+    if (!email) return null;
+    const user = (this.cache.users || []).find(u => u && u.email && u.email.toLowerCase() === email.toLowerCase());
     if (!user) return null;
 
     if (user.passwordHash === hashPassword(passwordPlain)) {

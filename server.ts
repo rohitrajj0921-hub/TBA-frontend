@@ -23,8 +23,10 @@ interface AuthenticatedRequest extends Request {
   user?: User;
 }
 
+const app = express();
+export { app };
+
 async function startServer() {
-  const app = express();
   const PORT = 3000;
 
   app.use(express.json());
@@ -1440,6 +1442,11 @@ async function startServer() {
     app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
+  }
+
+  if (process.env.VERCEL) {
+    console.log("Running in Vercel serverless environment. Skipping app.listen and WebSockets.");
+    return;
   }
 
   const server = app.listen(PORT, "0.0.0.0", () => {
